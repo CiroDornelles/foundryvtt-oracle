@@ -1,0 +1,10 @@
+---
+- name: Reiniciar o Foundry VTT
+  systemd:
+    name: foundryvtt
+    state: restarted
+
+- name: Recarregar o Caddy
+  systemd:
+    name: caddy
+    state: reloaded

@@ -1,0 +1,8 @@
+---
+- name: Configurar servidor Foundry VTT
+  hosts: foundry_server
+  become: yes
+  vars_files:
+    - vars.yml
+  roles:
+    - role: foundry_vtt

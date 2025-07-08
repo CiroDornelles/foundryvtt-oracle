@@ -1,0 +1,87 @@
+---
+- name: Atualizar o cache de pacotes APT
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Instalar dependências necessárias
+  apt:
+    name:
+      - nodejs
+      - npm
+      - unzip
+    state: present
+
+- name: Criar o diretório de instalação do Foundry VTT
+  file:
+    path: /opt/foundryvtt
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Baixar e descompactar o Foundry VTT
+  unarchive:
+    src: "{{ foundry_download_url }}"
+    dest: /opt/foundryvtt
+    remote_src: yes
+    extra_opts: [--strip-components=1]
+
+- name: Criar o serviço systemd para o Foundry VTT
+  template:
+    src: foundryvtt.service.j2
+    dest: /etc/systemd/system/foundryvtt.service
+  notify: Reiniciar o Foundry VTT
+
+- name: Habilitar e iniciar o serviço Foundry VTT
+  systemd:
+    name: foundryvtt
+    enabled: yes
+    state: started
+    daemon_reload: yes
+
+- name: Adicionar handlers para reiniciar o serviço
+  meta: flush_handlers
+
+- name: Instalar o Caddy
+  block:
+    - name: Instalar dependências para o repositório do Caddy
+      apt:
+        name:
+          - debian-keyring
+          - debian-archive-keyring
+          - apt-transport-https
+        state: present
+
+    - name: Adicionar a chave GPG do repositório do Caddy
+      get_url:
+        url: "https://dl.cloudsmith.io/public/caddy/stable/gpg.key"
+        dest: /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+        mode: '0644'
+
+    - name: Adicionar o repositório do Caddy
+      apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main"
+        state: present
+        filename: caddy-stable
+
+    - name: Instalar o Caddy
+      apt:
+        name: caddy
+        state: present
+        update_cache: yes
+  when: foundry_domain_name is defined and foundry_domain_name != ""
+
+- name: Configurar o Caddyfile
+  template:
+    src: Caddyfile.j2
+    dest: /etc/caddy/Caddyfile
+  notify: Recarregar o Caddy
+  when: foundry_domain_name is defined and foundry_domain_name != ""
+
+- name: Garantir que o Caddy esteja iniciado
+  systemd:
+    name: caddy
+    enabled: yes
+    state: started
+  when: foundry_domain_name is defined and foundry_domain_name != ""
