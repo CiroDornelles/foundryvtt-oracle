@@ -1,0 +1,14 @@
+# Arquivo de configuração local com segredos
+config.sh
+
+# Arquivos gerados pelo script manage.sh
+ansible/inventory.ini
+ansible/vars.yml
+
+# Arquivos de estado e cache do Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+
+# Arquivos de sistema
+.DS_Store
