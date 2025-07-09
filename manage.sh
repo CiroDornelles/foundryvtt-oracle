@@ -77,13 +77,24 @@ check_permissions() {
     fi
     local group_name; group_name=$(echo "$group_info" | grep "group-name" | head -n 1 | awk -F'"' '{print $4}')
     log_ok "Usuário encontrado no grupo: $group_name"
+    
     log "Políticas de permissão recomendadas para o grupo '$group_name':"
-    local statements="[\"Allow group $group_name to manage vaults in tenancy\", \"Allow group $group_name to manage keys in tenancy\", \"Allow group $group_name to manage secrets in tenancy\", \"Allow group $group_name to manage virtual-network-family in tenancy\", \"Allow group $group_name to manage instance-family in tenancy\"]"
-    echo -e "${YELLOW}${statements//\"/\\\"}${NC}"
+    # Constrói a string JSON de statements dinamicamente com o nome do grupo
+    local statements="[
+        \"Allow group '$group_name' to manage vaults in tenancy\",
+        \"Allow group '$group_name' to manage keys in tenancy\",
+        \"Allow group '$group_name' to manage secrets in tenancy\",
+        \"Allow group '$group_name' to manage virtual-network-family in tenancy\",
+        \"Allow group '$group_name' to manage instance-family in tenancy\"
+    ]"
+    echo -e "${YELLOW}${statements}${NC}"
+
     log "Para criar uma política com essas permissões, você pode:"
     echo "1. ${BLUE}Via Console Web:${NC} Vá para 'Identity & Security' -> 'Policies', clique em 'Create Policy' e cole as linhas amarelas."
     echo "2. ${BLUE}Via CLI:${NC} Copie e cole o comando abaixo:"
-    echo -e "${GREEN}oci iam policy create --compartment-id \"$tenancy_ocid\" --name \"FoundryIAC-Permissions\" --description \"Permissões para o projeto Foundry VTT IaC\" --statements '$statements'${NC}"
+    # Escapa a string de statements para uso seguro na linha de comando
+    local escaped_statements; escaped_statements=$(echo "$statements" | sed 's/"/\\"/g')
+    echo -e "${GREEN}oci iam policy create --compartment-id \"$tenancy_ocid\" --name \"FoundryIAC-Permissions\" --description \"Permissões para o projeto Foundry VTT IaC\" --statements \"$escaped_statements\"${NC}"
 }
 
 init() {
