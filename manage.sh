@@ -48,7 +48,6 @@ prompt_user() {
     fi
 }
 
-# Função para executar comandos OCI com tratamento de erro
 run_oci() {
     local output
     output=$(eval "$@" 2>&1)
@@ -58,11 +57,7 @@ run_oci() {
         log_error "Um comando da OCI falhou (código de saída: $exit_code)."
         if [[ "$output" == *"NotAuthorizedOrNotFound"* ]]; then
             echo -e "${YELLOW}Causa provável: Faltam permissões na sua conta OCI.${NC}"
-            echo "Seu usuário precisa de permissão para gerenciar 'vaults', 'keys' e 'secrets'."
-            echo "Vá para 'Identity & Security' -> 'Policies' no console da OCI e adicione as seguintes regras ao seu grupo de usuários:"
-            echo -e "${GREEN}Allow group <SeuGrupo> to manage vaults in tenancy${NC}"
-            echo -e "${GREEN}Allow group <SeuGrupo> to manage keys in tenancy${NC}"
-            echo -e "${GREEN}Allow group <SeuGrupo> to manage secrets in tenancy${NC}"
+            echo "Para corrigir, execute o comando './manage.sh check-permissions' para gerar as políticas de permissão necessárias."
         else
             echo "Saída do erro:"
             echo "$output"
@@ -85,6 +80,48 @@ load_config() {
 
 # --- Lógica Principal dos Comandos ---
 
+check_permissions() {
+    log "Verificando permissões e gerando políticas necessárias..."
+    if ! command_exists oci; then log_error "A CLI da OCI não está instalada ou não está no seu PATH."; exit 1; fi
+    if [ ! -f "$OCI_CONFIG_FILE" ]; then log_error "Arquivo de configuração da OCI '$OCI_CONFIG_FILE' não encontrado."; exit 1; fi
+
+    local user_ocid=$(grep '^user' "$OCI_CONFIG_FILE" | awk -F'=' '{print $2}')
+    local tenancy_ocid=$(grep '^tenancy' "$OCI_CONFIG_FILE" | awk -F'=' '{print $2}')
+
+    log "Buscando o grupo do seu usuário (OCID: $user_ocid)..."
+    local group_info=$(oci iam user group-membership list --user-id "$user_ocid" --all 2>/dev/null | grep "group-name")
+    
+    if [ -z "$group_info" ]; then
+        log_error "Não foi possível encontrar um grupo para o seu usuário."
+        echo "Verifique se seu usuário está em algum grupo (como 'Administrators') no console da OCI."
+        exit 1
+    fi
+
+    local group_name=$(echo "$group_info" | head -n 1 | awk -F'"' '{print $4}')
+    echo "Usuário encontrado no grupo: ${GREEN}$group_name${NC}"
+
+    log "Políticas de permissão recomendadas para o grupo '$group_name':"
+    echo "----------------------------------------------------------------"
+    echo -e "${YELLOW}Allow group $group_name to manage vaults in tenancy${NC}"
+    echo -e "${YELLOW}Allow group $group_name to manage keys in tenancy${NC}"
+    echo -e "${YELLOW}Allow group $group_name to manage secrets in tenancy${NC}"
+    echo -e "${YELLOW}Allow group $group_name to manage virtual-network-family in tenancy${NC}"
+    echo -e "${YELLOW}Allow group $group_name to manage instance-family in tenancy${NC}"
+    echo "----------------------------------------------------------------"
+    
+    log "Para criar uma política com essas permissões, você pode:"
+    echo "1. ${BLUE}Via Console Web:${NC}"
+    echo "   - Vá para 'Identity & Security' -> 'Policies'."
+    echo "   - Clique em 'Create Policy', dê um nome e cole as linhas amarelas acima no editor manual."
+    echo ""
+    echo "2. ${BLUE}Via CLI (copie e cole o comando abaixo):${NC}"
+    
+    local statements="[\"Allow group $group_name to manage vaults in tenancy\", \"Allow group $group_name to manage keys in tenancy\", \"Allow group $group_name to manage secrets in tenancy\", \"Allow group $group_name to manage virtual-network-family in tenancy\", \"Allow group $group_name to manage instance-family in tenancy\"]"
+    
+    echo -e "${GREEN}oci iam policy create --compartment-id \"$tenancy_ocid\" --name \"FoundryIAC-Permissions\" --description \"Permissões para o projeto Foundry VTT IaC\" --statements '$statements'${NC}"
+}
+
+
 init() {
     log "Iniciando a configuração interativa do projeto..."
 
@@ -92,7 +129,7 @@ init() {
     if [ ! -f "$OCI_CONFIG_FILE" ]; then log_error "Arquivo de configuração da OCI '$OCI_CONFIG_FILE' não encontrado."; exit 1; fi
     if [ ! -f "$SSH_PUBLIC_KEY_PATH" ]; then log_error "Chave SSH pública não encontrada em '$SSH_PUBLIC_KEY_PATH'."; exit 1; fi
 
-    log "Lendo sua configuração da OCI em '$OCI_CONFIG_FILE'..."
+    log "Lendo sua configuração da OCI em '$OCI_CONFIG_FILE'...";
     TF_VAR_tenancy_ocid=$(grep '^tenancy' "$OCI_CONFIG_FILE" | awk -F'=' '{print $2}')
     TF_VAR_user_ocid=$(grep '^user' "$OCI_CONFIG_FILE" | awk -F'=' '{print $2}')
     TF_VAR_fingerprint=$(grep '^fingerprint' "$OCI_CONFIG_FILE" | awk -F'=' '{print $2}')
@@ -143,7 +180,7 @@ init() {
     TF_VAR_ssh_public_key_secret_ocid=$(run_oci oci vault secret create-base64 --compartment-id "$TF_VAR_compartment_ocid" --vault-id "$VAULT_OCID" --key-id "$KEY_OCID" --secret-name "$secret_name" --secret-content-content-file "$SSH_PUBLIC_KEY_PATH" --query 'data.id' --raw-output)
     echo "Chave SSH armazenada com sucesso no Vault."
 
-    log "Gerando arquivo de configuração '$CONFIG_FILE'..."
+    log "Gerando arquivo de configuração '$CONFIG_FILE'...";
     cat > "$CONFIG_FILE" <<EOF
 # Arquivo de configuração gerado automaticamente por './manage.sh init'
 export TF_VAR_tenancy_ocid="$TF_VAR_tenancy_ocid"
@@ -242,12 +279,14 @@ case "$1" in
     up) up ;;
     down) down ;;
     clean) clean ;;
+    check-permissions) check_permissions ;;
     *)
-        echo "Uso: $0 {init|up|down|clean}"
-        echo "  ${GREEN}init${NC}  - Configura o projeto de forma interativa."
-        echo "  ${GREEN}up${NC}    - Cria e provisiona o servidor Foundry VTT na OCI."
-        echo "  ${GREEN}down${NC}  - Destrói a infraestrutura do servidor (VM, Rede, etc)."
-        echo "  ${GREEN}clean${NC} - Destrói TUDO, incluindo o Vault e as configurações locais."
+        echo "Uso: $0 {init|up|down|clean|check-permissions}"
+        echo "  ${GREEN}init${NC}               - Configura o projeto de forma interativa."
+        echo "  ${GREEN}up${NC}                 - Cria e provisiona o servidor Foundry VTT na OCI."
+        echo "  ${GREEN}down${NC}               - Destrói a infraestrutura do servidor (VM, Rede, etc)."
+        echo "  ${GREEN}clean${NC}              - Destrói TUDO, incluindo o Vault e as configurações locais."
+        echo "  ${GREEN}check-permissions${NC}  - Gera as políticas de permissão da OCI necessárias para o projeto."
         exit 1
         ;;
 esac

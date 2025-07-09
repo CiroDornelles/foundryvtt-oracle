@@ -60,4 +60,14 @@ Vamos ver o que cada botão do nosso controle remoto faz.
 
 ---
 
+### Botão Bônus: `./manage.sh check-permissions` (O Consultor de Segurança)
+
+-   **O que ele faz?** Este comando não constrói nem destrói nada. Ele é uma ferramenta de ajuda. Se o comando `init` falhar por falta de permissão, este comando te ajuda a resolver.
+-   **Nos Bastidores:**
+    1.  **Investiga sua Conta:** Ele usa a CLI da OCI para descobrir qual é o seu usuário e a qual grupo ele pertence.
+    2.  **Gera a Receita:** Ele imprime na tela o texto exato das permissões que você precisa dar a esse grupo para que o projeto funcione. Ele também te dá o comando completo para fazer isso via terminal, se preferir.
+-   **Analogia:** É como chamar um **consultor de segurança**. Você não sabe por que o porteiro não te deixa entrar na obra, então o consultor verifica seus documentos, vê o que está faltando e te entrega um formulário preenchido, pronto para você assinar e entregar na administração do condomínio.
+
+---
+
 E assim, o `manage.sh` orquestra todo o trabalho complexo, permitindo que qualquer pessoa gerencie um servidor poderoso com comandos simples e diretos.

@@ -23,6 +23,18 @@ Com um único script, você pode inicializar, criar, destruir e limpar toda a in
     -   [Terraform](https://learn.hashicorp.com/tutorials/terraform/install-cli)
     -   [Ansible](https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html)
 
+## Solução de Problemas (Permissões na OCI)
+
+Ao interagir com a nuvem, o erro mais comum é o de permissões insuficientes. Se o comando `init` falhar com uma mensagem sobre "NotAuthorizedOrNotFound", significa que seu usuário OCI não tem permissão para gerenciar os recursos necessários (como Vaults, redes e máquinas virtuais).
+
+Para resolver isso, criamos um comando auxiliar para gerar as políticas de permissão exatas para você:
+
+```bash
+./manage.sh check-permissions
+```
+
+Este comando irá inspecionar sua configuração da OCI, encontrar seu grupo de usuários e imprimir na tela as regras que você precisa adicionar no painel da Oracle em **Identity & Security > Policies**. Ele também fornecerá o comando exato da CLI para criar essas permissões, se você preferir. Após aplicar as permissões, rode o `./manage.sh init` novamente.
+
 ## Como Usar
 
 O uso foi simplificado para apenas alguns comandos no script `manage.sh`.
