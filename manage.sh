@@ -197,15 +197,25 @@ clean() {
 }
 
 # --- Ponto de Entrada ---
-case "$1" in
-    init|up|down|clean|check-permissions) "$1" ;;
-    *)
-        echo "Uso: $0 {init|up|down|clean|check-permissions}"
-        echo "  ${GREEN}init${NC}               - Configura o projeto de forma interativa."
-        echo "  ${GREEN}up${NC}                 - Cria e provisiona o servidor Foundry VTT na OCI."
-        echo "  ${GREEN}down${NC}               - Destrói a infraestrutura do servidor (VM, Rede, etc)."
-        echo "  ${GREEN}clean${NC}              - Destrói TUDO, incluindo o Vault e as configurações locais."
-        echo "  ${GREEN}check-permissions${NC}  - Gera as políticas de permissão da OCI necessárias para o projeto."
-        exit 1
-        ;;
-esac
+main() {
+    local cmd="$1"
+    case "$cmd" in
+        init|up|down|clean|check-permissions)
+            # Remove o primeiro argumento (o comando) e passa o resto
+            shift
+            # Chama a função correspondente ao comando
+            "$cmd" "$@"
+            ;;
+        *)
+            echo "Uso: $0 {init|up|down|clean|check-permissions}"
+            echo "  ${GREEN}init${NC}               - Configura o projeto de forma interativa."
+            echo "  ${GREEN}up${NC}                 - Cria e provisiona o servidor Foundry VTT na OCI."
+            echo "  ${GREEN}down${NC}               - Destrói a infraestrutura do servidor (VM, Rede, etc)."
+            echo "  ${GREEN}clean${NC}              - Destrói TUDO, incluindo o Vault e as configurações locais."
+            echo "  ${GREEN}check-permissions${NC}  - Gera as políticas de permissão da OCI necessárias para o projeto."
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"
