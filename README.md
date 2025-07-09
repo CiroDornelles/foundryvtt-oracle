@@ -1,73 +1,80 @@
 # Foundry VTT na Oracle Cloud (IaC)
 
-Este projeto utiliza Terraform e Ansible para provisionar e configurar de forma automatizada um servidor Foundry VTT na camada "Always Free" da Oracle Cloud Infrastructure (OCI).
+Este projeto utiliza Terraform e Ansible para provisionar e configurar de forma totalmente automatizada um servidor Foundry VTT na camada "Always Free" da Oracle Cloud Infrastructure (OCI).
 
-Com os scripts deste repositório, você pode criar e destruir toda a infraestrutura com comandos simples, facilitando o gerenciamento e evitando custos.
+Com um único script, você pode inicializar, criar, destruir e limpar toda a infraestrutura, tornando o processo extremamente simples e à prova de erros.
 
 ## Visão Geral
 
 - **Infraestrutura como Código (IaC):** A infraestrutura (VM, Rede, IP Público) é definida com **Terraform**.
-- **Gerenciamento de Configuração:** A instalação e configuração do software (Node.js, Foundry VTT, Caddy) na VM é feita com **Ansible**.
-- **Resultado:** Um servidor Foundry VTT pronto para uso, acessível via IP público ou um nome de domínio com HTTPS.
+- **Gerenciamento de Configuração:** A instalação do software (Node.js, Foundry VTT, Caddy) é feita com **Ansible**.
+- **Automação Total:** O script `manage.sh` orquestra todo o processo, desde a configuração inicial até a destruição completa dos recursos.
+- **Gerenciamento de Segredos:** As chaves SSH são armazenadas de forma segura no **OCI Vault**, eliminando a necessidade de gerenciá-las localmente.
 
 ## Pré-requisitos
 
-Antes de começar, você precisará de:
-
 1.  **Conta na Oracle Cloud:** Com acesso à camada "Always Free".
-2.  **Credenciais da API OCI:** Siga o [guia da OCI](https-link-para-guia) para gerar sua chave de API e coletar as informações necessárias (OCIDs de usuário, tenancy, fingerprint).
-3.  **URL de Download do Foundry VTT:** Uma URL de download válida e temporária para a versão Linux/Node.js, obtida do seu perfil no [site oficial do Foundry VTT](https://foundryvtt.com/).
-4.  **Chave SSH:** Uma chave SSH pública deve estar disponível em `~/.ssh/id_rsa.pub`. Se você não tiver uma, gere-a com o comando `ssh-keygen -t rsa -b 4096`. Esta chave é usada para acessar a VM criada.
-5.  **Software Instalado Localmente:**
-    *   [Terraform](https://learn.hashicorp.com/tutorials/terraform/install-cli)
-    *   [Ansible](https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html)
-    *   (Opcional) [CLI da OCI](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm)
+2.  **CLI da OCI Instalada e Configurada:**
+    -   Siga o [guia oficial](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm) para instalar a CLI.
+    -   Execute `oci setup config` para configurá-la. O script deste projeto lerá as credenciais diretamente de lá.
+3.  **Chave SSH:** Uma chave SSH deve existir em `~/.ssh/id_rsa.pub`. Se não tiver, gere com `ssh-keygen -t rsa -b 4096`.
+4.  **Software Local:**
+    -   [Terraform](https://learn.hashicorp.com/tutorials/terraform/install-cli)
+    -   [Ansible](https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html)
 
 ## Como Usar
 
-### 1. Configuração Inicial
+O uso foi simplificado para apenas alguns comandos no script `manage.sh`.
 
-Clone este repositório e navegue até o diretório:
+> **Quer entender os detalhes?**
+> Se você é novo em tudo isso e quer entender *como* a mágica funciona, criamos uma **documentação detalhada e amigável para iniciantes** na pasta [`docs/`](./docs/00_POR_ONDE_COMECAR.md). Recomendamos começar por lá!
+
+### 1. Inicialização (Comando `init`)
+
+Este é o **primeiro e único passo de configuração manual**. Clone o repositório, entre na pasta e execute:
 
 ```bash
 git clone https://github.com/CiroDornelles/foundry-vtt-iac.git
 cd foundry-vtt-iac
+./manage.sh init
 ```
 
-Crie o seu arquivo de configuração a partir do template:
+O script irá:
+- Validar seus pré-requisitos (CLI da OCI, chave SSH).
+- Ler suas credenciais da OCI.
+- **Perguntar interativamente** pela URL de download do Foundry VTT e uma senha de admin.
+- Criar um Vault na sua conta OCI para guardar sua chave SSH pública de forma segura.
+- Gerar um arquivo `config.sh` com todas as informações necessárias.
 
-```bash
-cp config.template.sh config.sh
-```
+### 2. Subir o Servidor (Comando `up`)
 
-Edite o arquivo `config.sh` e preencha **todas** as variáveis com suas informações da OCI e do Foundry VTT.
-
-**Opcional (HTTPS com Domínio):** Se você deseja acessar seu servidor via um domínio (ex: `https://foundry.seusite.com`), preencha a variável `ANSIBLE_VAR_foundry_domain_name`. Você **deve** configurar um registro DNS do tipo `A` apontando seu domínio para o IP público que será gerado quando o servidor for criado. O script do Caddy cuidará automaticamente do certificado SSL.
-
-### 2. Subir o Servidor
-
-Para criar e provisionar o servidor, execute:
+Com a inicialização feita, para criar e provisionar o servidor, execute:
 
 ```bash
 ./manage.sh up
 ```
 
-O script irá:
-1.  Executar `terraform apply` para criar os recursos na OCI.
-2.  Gerar um inventário Ansible com o IP da nova VM.
-3.  Executar o `ansible-playbook` para instalar e configurar o Foundry VTT.
+O script irá executar o Terraform e o Ansible. Ao final, o endereço do seu servidor será exibido.
 
-Ao final, o endereço IP público do seu servidor será exibido.
+### 3. Destruir o Servidor (Comando `down`)
 
-### 3. Destruir o Servidor
-
-Para remover completamente todos os recursos da OCI e evitar custos, execute:
+Para remover a infraestrutura do servidor (VM, IP, etc.) mas **manter o Vault e a configuração**, execute:
 
 ```bash
 ./manage.sh down
 ```
 
-Este comando executará `terraform destroy`.
+Isso é útil se você planeja subir o servidor novamente mais tarde.
+
+### 4. Limpeza Completa (Comando `clean`)
+
+Para apagar **TUDO** que foi criado por este projeto, incluindo o servidor, o Vault com a chave SSH e os arquivos de configuração locais, execute:
+
+```bash
+./manage.sh clean
+```
+
+Isso deixará sua conta OCI e seu diretório local como estavam antes de você começar.
 
 ## Estrutura do Projeto
 
@@ -76,12 +83,6 @@ Este comando executará `terraform destroy`.
 ├── ansible/          # Playbooks e roles do Ansible
 ├── terraform/        # Código de infraestrutura do Terraform
 ├── .gitignore
-├── config.sh         # (Seu arquivo, ignorado pelo Git)
-├── config.template.sh
-├── manage.sh         # Script principal para subir/descer a stack
+├── manage.sh         # Script principal para gerenciar toda a stack
 └── README.md
 ```
-
-## Detalhes Técnicos
-
-*(Esta seção será preenchida com mais detalhes sobre as decisões de implementação do Terraform e Ansible conforme avançamos.)*

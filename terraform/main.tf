@@ -1,3 +1,12 @@
+# Busca o segredo da chave SSH pública no OCI Vault
+data "oci_vault_secret" "ssh_public_key" {
+  secret_id = var.ssh_public_key_secret_ocid
+}
+
+data "oci_vault_secret_content" "ssh_public_key_content" {
+  secret_id = data.oci_vault_secret.ssh_public_key.id
+}
+
 # Rede Virtual Cloud (VCN)
 resource "oci_core_vcn" "foundry_vcn" {
   compartment_id = var.compartment_ocid
@@ -132,6 +141,6 @@ resource "oci_core_instance" "foundry_instance" {
   }
 
   metadata = {
-    ssh_authorized_keys = file("~/.ssh/id_rsa.pub")
+    ssh_authorized_keys = base64decode(data.oci_vault_secret_content.ssh_public_key_content.content)
   }
 }
