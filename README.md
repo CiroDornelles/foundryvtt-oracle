@@ -8,7 +8,7 @@ Com um único script, você pode inicializar, criar, destruir e limpar toda a in
 
 - **Infraestrutura como Código (IaC):** A infraestrutura (VM, Rede, IP Público) é definida com **Terraform**.
 - **Gerenciamento de Configuração:** A instalação do software (Node.js, Foundry VTT, Caddy) é feita com **Ansible**.
-- **Automação Total:** O script `manage.sh` orquestra todo o processo, desde a configuração inicial até a destruição completa dos recursos.
+- **Automação e Resiliência:** O script `manage.sh` orquestra todo o processo, com verificação de pré-requisitos e tratamento de erros comuns, com tutoriais para ajudar a resolver problemas.
 - **Gerenciamento de Segredos:** As chaves SSH são armazenadas de forma segura no **OCI Vault**.
 - **DNS Dinâmico:** Integração opcional com o No-IP para que seu servidor tenha sempre o mesmo endereço web, mesmo que o IP mude.
 

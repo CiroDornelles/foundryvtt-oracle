@@ -6,25 +6,31 @@ ANSIBLE_VARS_FILE="ansible/vars.yml"
 OCI_CONFIG_FILE="$HOME/.oci/config"
 SSH_PUBLIC_KEY_PATH="$HOME/.ssh/id_rsa.pub"
 
-# Cores para a saída
+# Cores
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-# --- Funções Auxiliares ---
+# --- Funções de Utilidade ---
 
-command_exists() {
-    command -v "$1" >/dev/null 2>&1
-}
+log() { echo -e "\n${BLUE}>> $1${NC}"; }
+log_ok() { echo -e "${GREEN}✔ $1${NC}"; }
+log_warn() { echo -e "${YELLOW}⚠ $1${NC}"; }
+log_error() { echo -e "${RED}✖ ERRO: $1${NC}"; }
 
-log() {
-    echo -e "\n${BLUE}>> $1${NC}"
-}
-
-log_error() {
-    echo -e "${RED}ERRO: $1${NC}"
+# Função de tratamento de erro centralizada
+handle_error() {
+    local message="$1"
+    local tutorial="$2"
+    log_error "$message"
+    if [ -n "$tutorial" ]; then
+        echo -e "\n${YELLOW}--- Mini-Tutorial: Como Resolver ---${NC}"
+        echo -e "$tutorial"
+        echo -e "${YELLOW}------------------------------------${NC}"
+    fi
+    exit 1
 }
 
 prompt_user() {
@@ -33,161 +39,93 @@ prompt_user() {
     local default_value="$3"
     local is_secret="${4:-false}"
     local input
-
-    if [ "$is_secret" = true ]; then
-        read -sp "$prompt_text" input
-        echo
-    else
-        read -p "$prompt_text" input
-    fi
-    
-    if [ -z "$input" ] && [ -n "$default_value" ]; then
-        eval "$var_name=\"$default_value\""
-    else
-        eval "$var_name=\"$input\""
-    fi
+    if [ "$is_secret" = true ]; then read -sp "$prompt_text" input; echo; else read -p "$prompt_text" input; fi
+    if [ -z "$input" ] && [ -n "$default_value" ]; then eval "$var_name=\"$default_value\"\"; else eval "$var_name=\"$input\"\"; fi
 }
 
 run_oci() {
-    local output
-    output=$(eval "$@" 2>&1)
-    local exit_code=$?
-
+    local output; output=$(eval "$@" 2>&1); local exit_code=$?
     if [ $exit_code -ne 0 ]; then
-        log_error "Um comando da OCI falhou (código de saída: $exit_code)."
-        if [[ "$output" == *"NotAuthorizedOrNotFound"* ]]; then
-            echo -e "${YELLOW}Causa provável: Faltam permissões na sua conta OCI.${NC}"
-            echo "Para corrigir, execute o comando './manage.sh check-permissions' para gerar as políticas de permissão necessárias."
-        else
-            echo "Saída do erro:"
-            echo "$output"
-        fi
-        exit 1
+        local tutorial="Execute './manage.sh check-permissions' para gerar as políticas de permissão necessárias e siga as instruções."
+        if [[ "$output" != *"NotAuthorizedOrNotFound"* ]]; then tutorial="A saída do erro foi:\n$output"; fi
+        handle_error "Um comando da OCI falhou." "$tutorial"
     fi
     echo "$output"
 }
 
-load_config() {
-    if [ -f "$CONFIG_FILE" ]; then
-        source "$CONFIG_FILE"
-        return 0
-    else
-        log_error "Arquivo de configuração '$CONFIG_FILE' não encontrado."
-        echo "Por favor, execute o comando './manage.sh init' primeiro."
-        return 1
-    fi
+# --- Funções de Comandos ---
+
+check_prerequisites() {
+    log "Verificando pré-requisitos..."
+    command -v oci >/dev/null || handle_error "Comando 'oci' não encontrado." "A CLI da OCI é essencial. Siga o guia de instalação oficial em:\nhttps://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm"
+    command -v terraform >/dev/null || handle_error "Comando 'terraform' não encontrado." "Terraform é essencial. Siga o guia de instalação oficial em:\nhttps://learn.hashicorp.com/tutorials/terraform/install-cli"
+    command -v ansible >/dev/null || handle_error "Comando 'ansible' não encontrado." "Ansible é essencial. Siga o guia de instalação oficial em:\nhttps://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html"
+    [ -f "$OCI_CONFIG_FILE" ] || handle_error "Arquivo de configuração da OCI não encontrado." "Execute 'oci setup config' e siga as instruções para criar o arquivo de configuração em '$OCI_CONFIG_FILE'."
+    [ -f "$SSH_PUBLIC_KEY_PATH" ] || handle_error "Chave SSH pública não encontrada." "Uma chave SSH é necessária para acesso seguro. Gere uma com o comando:\nssh-keygen -t rsa -b 4096"
+    log_ok "Todos os pré-requisitos foram atendidos."
 }
 
-# --- Lógica Principal dos Comandos ---
-
 check_permissions() {
-    log "Verificando permissões e gerando políticas necessárias..."
-    if ! command_exists oci; then log_error "A CLI da OCI não está instalada ou não está no seu PATH."; exit 1; fi
-    if [ ! -f "$OCI_CONFIG_FILE" ]; then log_error "Arquivo de configuração da OCI '$OCI_CONFIG_FILE' não encontrado."; exit 1; fi
-
-    local user_ocid=$(grep '^user' "$OCI_CONFIG_FILE" | awk -F'=' '{print $2}')
-    local tenancy_ocid=$(grep '^tenancy' "$OCI_CONFIG_FILE" | awk -F'=' '{print $2}')
-
+    check_prerequisites
+    log "Verificando permissões e gerando políticas..."
+    local user_ocid; user_ocid=$(grep '^user' "$OCI_CONFIG_FILE" | awk -F'=' '{print $2}')
+    local tenancy_ocid; tenancy_ocid=$(grep '^tenancy' "$OCI_CONFIG_FILE" | awk -F'=' '{print $2}')
     log "Buscando o grupo do seu usuário (OCID: $user_ocid)..."
-    local group_info=$(oci iam user group-membership list --user-id "$user_ocid" --all 2>/dev/null | grep "group-name")
-    
-    if [ -z "$group_info" ]; then
-        log_error "Não foi possível encontrar um grupo para o seu usuário."
-        echo "Verifique se seu usuário está em algum grupo (como 'Administrators') no console da OCI."
-        exit 1
+    local group_info; group_info=$(oci iam user group-membership list --user-id "$user_ocid" --all 2>/dev/null)
+    if [ -z "$group_info" ] || [[ "$group_info" == *"NotAuthorizedOrNotFound"* ]]; then
+        handle_error "Não foi possível encontrar um grupo para o seu usuário." "Seu usuário OCI precisa pertencer a um grupo (ex: 'Administrators') para ter permissões.\n1. Acesse o console da OCI: https://cloud.oracle.com\n2. Vá para 'Identity & Security' -> 'Groups'.\n3. Clique no grupo 'Administrators'.\n4. Clique em 'Add User to Group' e adicione seu usuário."
     fi
-
-    local group_name=$(echo "$group_info" | head -n 1 | awk -F'"' '{print $4}')
-    echo "Usuário encontrado no grupo: ${GREEN}$group_name${NC}"
-
+    local group_name; group_name=$(echo "$group_info" | grep "group-name" | head -n 1 | awk -F'"' '{print $4}')
+    log_ok "Usuário encontrado no grupo: $group_name"
     log "Políticas de permissão recomendadas para o grupo '$group_name':"
-    echo "----------------------------------------------------------------"
-    echo -e "${YELLOW}Allow group $group_name to manage vaults in tenancy${NC}"
-    echo -e "${YELLOW}Allow group $group_name to manage keys in tenancy${NC}"
-    echo -e "${YELLOW}Allow group $group_name to manage secrets in tenancy${NC}"
-    echo -e "${YELLOW}Allow group $group_name to manage virtual-network-family in tenancy${NC}"
-    echo -e "${YELLOW}Allow group $group_name to manage instance-family in tenancy${NC}"
-    echo "----------------------------------------------------------------"
-    
-    log "Para criar uma política com essas permissões, você pode:"
-    echo "1. ${BLUE}Via Console Web:${NC}"
-    echo "   - Vá para 'Identity & Security' -> 'Policies'."
-    echo "   - Clique em 'Create Policy', dê um nome e cole as linhas amarelas acima no editor manual."
-    echo ""
-    echo "2. ${BLUE}Via CLI (copie e cole o comando abaixo):${NC}"
-    
     local statements="[\"Allow group $group_name to manage vaults in tenancy\", \"Allow group $group_name to manage keys in tenancy\", \"Allow group $group_name to manage secrets in tenancy\", \"Allow group $group_name to manage virtual-network-family in tenancy\", \"Allow group $group_name to manage instance-family in tenancy\"]"
-    
+    echo -e "${YELLOW}${statements//\"/\\\"}${NC}"
+    log "Para criar uma política com essas permissões, você pode:"
+    echo "1. ${BLUE}Via Console Web:${NC} Vá para 'Identity & Security' -> 'Policies', clique em 'Create Policy' e cole as linhas amarelas."
+    echo "2. ${BLUE}Via CLI:${NC} Copie e cole o comando abaixo:"
     echo -e "${GREEN}oci iam policy create --compartment-id \"$tenancy_ocid\" --name \"FoundryIAC-Permissions\" --description \"Permissões para o projeto Foundry VTT IaC\" --statements '$statements'${NC}"
 }
 
-
 init() {
+    check_prerequisites
     log "Iniciando a configuração interativa do projeto..."
-
-    if ! command_exists oci; then log_error "A CLI da OCI não está instalada ou não está no seu PATH."; exit 1; fi
-    if [ ! -f "$OCI_CONFIG_FILE" ]; then log_error "Arquivo de configuração da OCI '$OCI_CONFIG_FILE' não encontrado."; exit 1; fi
-    if [ ! -f "$SSH_PUBLIC_KEY_PATH" ]; then log_error "Chave SSH pública não encontrada em '$SSH_PUBLIC_KEY_PATH'."; exit 1; fi
-
-    log "Lendo sua configuração da OCI em '$OCI_CONFIG_FILE'...";
-    TF_VAR_tenancy_ocid=$(grep '^tenancy' "$OCI_CONFIG_FILE" | awk -F'=' '{print $2}')
-    TF_VAR_user_ocid=$(grep '^user' "$OCI_CONFIG_FILE" | awk -F'=' '{print $2}')
-    TF_VAR_fingerprint=$(grep '^fingerprint' "$OCI_CONFIG_FILE" | awk -F'=' '{print $2}')
-    TF_VAR_private_key_path=$(grep '^key_file' "$OCI_CONFIG_FILE" | awk -F'=' '{print $2}')
-    TF_VAR_region=$(grep '^region' "$OCI_CONFIG_FILE" | awk -F'=' '{print $2}')
-    TF_VAR_compartment_ocid=$TF_VAR_tenancy_ocid
-    echo "Valores extraídos com sucesso."
-
+    local TF_VAR_tenancy_ocid; TF_VAR_tenancy_ocid=$(grep '^tenancy' "$OCI_CONFIG_FILE" | awk -F'=' '{print $2}')
+    local TF_VAR_compartment_ocid=$TF_VAR_tenancy_ocid
     log "Por favor, forneça as seguintes informações:"
     prompt_user "URL de download do Foundry VTT (versão Linux/Node.js): " ANSIBLE_VAR_foundry_download_url
-    prompt_user "Senha do administrador do Foundry (deixe em branco para gerar uma aleatória): " ANSIBLE_VAR_foundry_admin_password "" true
-    prompt_user "Domínio para o Foundry (ex: foundry.meusite.com, opcional para Caddy): " ANSIBLE_VAR_foundry_domain_name
-
-    ANSIBLE_VAR_noip_hostname=""
-    prompt_user "Deseja configurar o DNS dinâmico com No-IP? [s/N]: " setup_noip "n"
+    prompt_user "Senha do administrador do Foundry (deixe em branco para aleatória): " ANSIBLE_VAR_foundry_admin_password "" true
+    prompt_user "Domínio para o Foundry (ex: foundry.meusite.com, opcional): " ANSIBLE_VAR_foundry_domain_name
+    local ANSIBLE_VAR_noip_hostname=""; prompt_user "Deseja configurar o DNS dinâmico com No-IP? [s/N]: " setup_noip "n"
     if [[ "$setup_noip" =~ ^[sS](im)?$ ]]; then
         prompt_user "Hostname do No-IP (ex: seu-rpg.ddns.net): " ANSIBLE_VAR_noip_hostname
         prompt_user "Usuário (email) do No-IP: " ANSIBLE_VAR_noip_username
         prompt_user "Senha do No-IP: " ANSIBLE_VAR_noip_password "" true
     fi
-
-    log "Configurando o OCI Vault para armazenar sua chave SSH de forma segura..."
-    local vault_name="foundry-vtt-iac-vault"
-    local key_name="foundry-vtt-iac-key"
-    local secret_name="foundry-vtt-iac-ssh-key"
-    
-    VAULT_OCID=$(run_oci oci vault vault list --compartment-id "$TF_VAR_compartment_ocid" --display-name "$vault_name" --query "data[0].id" --raw-output)
+    log "Configurando o OCI Vault..."
+    local vault_name="foundry-vtt-iac-vault"; local key_name="foundry-vtt-iac-key"; local secret_name="foundry-vtt-iac-ssh-key"
+    local VAULT_OCID; VAULT_OCID=$(run_oci oci vault vault list --compartment-id "$TF_VAR_compartment_ocid" --display-name "$vault_name" --query "data[0].id" --raw-output)
     if [ -z "$VAULT_OCID" ] || [ "$VAULT_OCID" == "null" ]; then
-        echo "Criando um novo Vault ($vault_name)..."
+        log "Criando um novo Vault ($vault_name)..."
         VAULT_OCID=$(run_oci oci vault vault create --compartment-id "$TF_VAR_compartment_ocid" --vault-type "DEFAULT" --display-name "$vault_name" --query 'data.id' --raw-output)
         run_oci oci vault vault wait-for-state --vault-id "$VAULT_OCID" --state "ACTIVE"
     else
-        echo "Usando Vault existente ($vault_name)."
+        log_ok "Usando Vault existente."
     fi
-    
-    MANAGEMENT_ENDPOINT=$(run_oci oci vault vault get --vault-id "$VAULT_OCID" --query 'data."management-endpoint"' --raw-output)
-    
-    KEY_OCID=$(run_oci oci vault key list --compartment-id "$TF_VAR_compartment_ocid" --endpoint "$MANAGEMENT_ENDPOINT" --display-name "$key_name" --query "data[0].id" --raw-output)
+    local MANAGEMENT_ENDPOINT; MANAGEMENT_ENDPOINT=$(run_oci oci vault vault get --vault-id "$VAULT_OCID" --query 'data."management-endpoint"' --raw-output)
+    local KEY_OCID; KEY_OCID=$(run_oci oci vault key list --compartment-id "$TF_VAR_compartment_ocid" --endpoint "$MANAGEMENT_ENDPOINT" --display-name "$key_name" --query "data[0].id" --raw-output)
     if [ -z "$KEY_OCID" ] || [ "$KEY_OCID" == "null" ]; then
-        echo "Criando uma nova chave de criptografia ($key_name)..."
+        log "Criando nova chave de criptografia ($key_name)..."
         KEY_OCID=$(run_oci oci vault key create --compartment-id "$TF_VAR_compartment_ocid" --display-name "$key_name" --key-shape '{"algorithm":"AES","length":"32"}' --protection-mode "SOFTWARE" --endpoint "$MANAGEMENT_ENDPOINT" --query 'data.id' --raw-output)
         run_oci oci vault key wait-for-state --key-id "$KEY_OCID" --state "ENABLED" --endpoint "$MANAGEMENT_ENDPOINT"
     else
-        echo "Usando chave de criptografia existente ($key_name)."
+        log_ok "Usando chave de criptografia existente."
     fi
-
-    echo "Fazendo upload da sua chave SSH pública para o Vault..."
-    TF_VAR_ssh_public_key_secret_ocid=$(run_oci oci vault secret create-base64 --compartment-id "$TF_VAR_compartment_ocid" --vault-id "$VAULT_OCID" --key-id "$KEY_OCID" --secret-name "$secret_name" --secret-content-content-file "$SSH_PUBLIC_KEY_PATH" --query 'data.id' --raw-output)
-    echo "Chave SSH armazenada com sucesso no Vault."
-
-    log "Gerando arquivo de configuração '$CONFIG_FILE'...";
-    cat > "$CONFIG_FILE" <<EOF
-# Arquivo de configuração gerado automaticamente por './manage.sh init'
-export TF_VAR_tenancy_ocid="$TF_VAR_tenancy_ocid"
-export TF_VAR_user_ocid="$TF_VAR_user_ocid"
-export TF_VAR_fingerprint="$TF_VAR_fingerprint"
-export TF_VAR_private_key_path="$TF_VAR_private_key_path"
-export TF_VAR_region="$TF_VAR_region"
+    log "Fazendo upload da chave SSH pública para o Vault..."
+    local TF_VAR_ssh_public_key_secret_ocid; TF_VAR_ssh_public_key_secret_ocid=$(run_oci oci vault secret create-base64 --compartment-id "$TF_VAR_compartment_ocid" --vault-id "$VAULT_OCID" --key-id "$KEY_OCID" --secret-name "$secret_name" --secret-content-content-file "$SSH_PUBLIC_KEY_PATH" --query 'data.id' --raw-output)
+    log_ok "Chave SSH armazenada com segurança no Vault."
+    log "Gerando arquivo de configuração '$CONFIG_FILE'..."
+    grep -v "ANSIBLE_VAR_noip" "$OCI_CONFIG_FILE" > "$CONFIG_FILE" # Start with OCI config
+    cat >> "$CONFIG_FILE" <<EOF
 export TF_VAR_compartment_ocid="$TF_VAR_compartment_ocid"
 export TF_VAR_ssh_public_key_secret_ocid="$TF_VAR_ssh_public_key_secret_ocid"
 export ANSIBLE_VAR_foundry_download_url="$ANSIBLE_VAR_foundry_download_url"
@@ -200,31 +138,19 @@ export ANSIBLE_VAR_noip_password="$ANSIBLE_VAR_noip_password"
 export METADATA_VAULT_OCID="$VAULT_OCID"
 export METADATA_SECRET_OCID="$TF_VAR_ssh_public_key_secret_ocid"
 EOF
-
-    echo -e "${GREEN}--- Configuração Concluída! ---${NC}"
-    echo "O arquivo '$CONFIG_FILE' foi criado com sucesso."
-    echo "Agora você pode executar './manage.sh up' para subir o servidor."
+    log_ok "Configuração concluída! Execute './manage.sh up' para subir o servidor."
 }
 
 up() {
-    if ! load_config; then exit 1; fi
+    source "$CONFIG_FILE" || handle_error "Falha ao carregar '$CONFIG_FILE'." "Execute './manage.sh init' primeiro para gerar o arquivo de configuração."
     log "Iniciando o processo de criação da infraestrutura (up)..."
-    (
-        cd terraform
-        log "Inicializando o Terraform..."
-        terraform init -upgrade
-        log "Aplicando o plano do Terraform para criar os recursos na OCI..."
-        terraform apply -auto-approve
-    )
-    PUBLIC_IP=$(cd terraform && terraform output -raw foundry_instance_public_ip)
-    if [ -z "$PUBLIC_IP" ]; then log_error "Não foi possível obter o IP público da instância."; exit 1; fi
-    log "IP Público da instância: $PUBLIC_IP"
-    (
-        cd ansible
-        log "Gerando inventário e variáveis para o Ansible..."
-        echo "[foundry_server]" > inventory.ini
-        echo "$PUBLIC_IP ansible_user=ubuntu" >> inventory.ini
-        cat > "$ANSIBLE_VARS_FILE" <<EOF
+    (cd terraform && terraform init -upgrade && terraform apply -auto-approve) || handle_error "O Terraform encontrou um erro." "Verifique a saída acima para detalhes. Pode ser um limite da sua conta OCI ou um erro de configuração."
+    local PUBLIC_IP; PUBLIC_IP=$(cd terraform && terraform output -raw foundry_instance_public_ip)
+    [ -n "$PUBLIC_IP" ] || handle_error "Não foi possível obter o IP público da instância." "Verifique os 'outputs' do Terraform."
+    log_ok "IP Público da instância: $PUBLIC_IP"
+    log "Gerando inventário e variáveis para o Ansible..."
+    echo "[foundry_server]" > ansible/inventory.ini; echo "$PUBLIC_IP ansible_user=ubuntu" >> ansible/inventory.ini
+    cat > "$ANSIBLE_VARS_FILE" <<EOF
 ---
 foundry_download_url: "$ANSIBLE_VAR_foundry_download_url"
 foundry_admin_user: "$ANSIBLE_VAR_foundry_admin_user"
@@ -234,52 +160,45 @@ noip_hostname: "$ANSIBLE_VAR_noip_hostname"
 noip_username: "$ANSIBLE_VAR_noip_username"
 noip_password: "$ANSIBLE_VAR_noip_password"
 EOF
-        log "Aguardando a instância ficar pronta para conexão SSH (60s)..."
-        sleep 60
-        log "Executando o playbook do Ansible para configurar o servidor..."
-        ansible-playbook -i inventory.ini playbook.yml --private-key ~/.ssh/id_rsa
-    )
-    echo -e "${GREEN}--- Servidor Pronto! ---${NC}"
-    echo "Seu servidor Foundry VTT está pronto para ser acessado."
-    if [ -n "$ANSIBLE_VAR_foundry_domain_name" ]; then
-        echo "Acesse em: https://$ANSIBLE_VAR_foundry_domain_name"
-    elif [ -n "$ANSIBLE_VAR_noip_hostname" ]; then
-        echo "Acesse em: http://$ANSIBLE_VAR_noip_hostname:30000"
-    else
-        echo "Acesse em: http://$PUBLIC_IP:30000"
+    log "Aguardando conexão SSH com o servidor..."
+    for i in {1..15}; do ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -q ubuntu@$PUBLIC_IP exit && break; echo -n "."; sleep 10; done
+    if ! ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -q ubuntu@$PUBLIC_IP exit; then
+        handle_error "Não foi possível conectar ao servidor via SSH." "Verifique as regras de segurança (porta 22) no console da OCI e sua conexão de rede."
     fi
+    log_ok "Conexão SSH estabelecida."
+    log "Executando o playbook do Ansible..."
+    (cd ansible && ansible-playbook -i inventory.ini playbook.yml --private-key ~/.ssh/id_rsa) || handle_error "O Ansible encontrou um erro." "Verifique a saída acima. Causas comuns:\n- URL de download do Foundry inválida/expirada.\n- Credenciais do No-IP incorretas.\n- Problemas de rede."
+    log_ok "Servidor pronto!"
+    local access_url="http://$PUBLIC_IP:30000"
+    if [ -n "$ANSIBLE_VAR_foundry_domain_name" ]; then access_url="https://$ANSIBLE_VAR_foundry_domain_name"; fi
+    if [ -n "$ANSIBLE_VAR_noip_hostname" ] && [ -z "$ANSIBLE_VAR_foundry_domain_name" ]; then access_url="http://$ANSIBLE_VAR_noip_hostname:30000"; fi
+    echo "Acesse em: $access_url"
 }
 
 down() {
-    if ! load_config; then exit 1; fi
-    log "Iniciando a destruição da infraestrutura do Terraform (down)..."
-    (
-        cd terraform
-        terraform destroy -auto-approve
-    )
-    log "Infraestrutura do Terraform destruída com sucesso."
+    source "$CONFIG_FILE" || handle_error "Falha ao carregar '$CONFIG_FILE'."
+    log "Iniciando a destruição da infraestrutura do Terraform..."
+    (cd terraform && terraform destroy -auto-approve) || handle_error "O Terraform encontrou um erro ao destruir a infraestrutura."
+    log_ok "Infraestrutura do Terraform destruída."
 }
 
 clean() {
-    if ! load_config; then echo -e "${YELLOW}Nenhuma configuração para limpar.${NC}"; exit 0; fi
-    log "Iniciando a limpeza completa (clean)..."
+    if [ ! -f "$CONFIG_FILE" ]; then log_warn "Nenhuma configuração para limpar."; exit 0; fi
+    log "Iniciando a limpeza completa..."
     down
-    log "Deletando o Secret da chave SSH do Vault..."
+    source "$CONFIG_FILE"
+    log "Agendando exclusão do Secret e do Vault..."
     run_oci oci vault secret schedule-deletion --secret-id "$METADATA_SECRET_OCID" --wait-for-state "DELETED"
-    log "Deletando o Vault..."
     run_oci oci vault vault schedule-deletion --vault-id "$METADATA_VAULT_OCID" --wait-for-state "DELETED"
     log "Removendo arquivos de configuração locais..."
     rm -f "$CONFIG_FILE" "ansible/inventory.ini" "$ANSIBLE_VARS_FILE"
     rm -rf "terraform/.terraform" "terraform/terraform.tfstate*"
-    echo -e "${GREEN}--- Limpeza Concluída! ---${NC}"
+    log_ok "Limpeza completa!"
 }
 
+# --- Ponto de Entrada ---
 case "$1" in
-    init) init ;;
-    up) up ;;
-    down) down ;;
-    clean) clean ;;
-    check-permissions) check_permissions ;;
+    init|up|down|clean|check-permissions) "$1" ;;
     *)
         echo "Uso: $0 {init|up|down|clean|check-permissions}"
         echo "  ${GREEN}init${NC}               - Configura o projeto de forma interativa."
