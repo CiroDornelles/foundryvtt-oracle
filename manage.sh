@@ -198,13 +198,21 @@ clean() {
 
 # --- Ponto de Entrada ---
 main() {
-    local cmd="$1"
-    case "$cmd" in
-        init|up|down|clean|check-permissions)
-            # Remove o primeiro argumento (o comando) e passa o resto
-            shift
-            # Chama a função correspondente ao comando
-            "$cmd" "$@"
+    case "$1" in
+        init)
+            init
+            ;;
+        up)
+            up
+            ;;
+        down)
+            down
+            ;;
+        clean)
+            clean
+            ;;
+        check-permissions)
+            check_permissions
             ;;
         *)
             echo "Uso: $0 {init|up|down|clean|check-permissions}"
