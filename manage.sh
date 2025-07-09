@@ -91,22 +91,28 @@ init() {
     TF_VAR_private_key_path=$(grep '^key_file' "$OCI_CONFIG_FILE" | awk -F'=' '{print $2}')
     TF_VAR_region=$(grep '^region' "$OCI_CONFIG_FILE" | awk -F'=' '{print $2}')
     TF_VAR_compartment_ocid=$TF_VAR_tenancy_ocid # Usa a tenancy como compartimento raiz por padrão
-
     echo "Valores extraídos com sucesso."
 
     # 3. Solicitar input do usuário
     log "Por favor, forneça as seguintes informações:"
     prompt_user "URL de download do Foundry VTT (versão Linux/Node.js): " ANSIBLE_VAR_foundry_download_url
     prompt_user "Senha do administrador do Foundry (deixe em branco para gerar uma aleatória): " ANSIBLE_VAR_foundry_admin_password "" true
-    prompt_user "Domínio para o Foundry (ex: foundry.meusite.com, opcional): " ANSIBLE_VAR_foundry_domain_name
+    prompt_user "Domínio para o Foundry (ex: foundry.meusite.com, opcional para Caddy): " ANSIBLE_VAR_foundry_domain_name
 
-    # 4. Gerenciar Vault e Chave SSH
+    # 4. Perguntar sobre No-IP
+    ANSIBLE_VAR_noip_hostname=""
+    prompt_user "Deseja configurar o DNS dinâmico com No-IP? [s/N]: " setup_noip "n"
+    if [[ "$setup_noip" =~ ^[sS](im)?$ ]]; then
+        prompt_user "Hostname do No-IP (ex: seu-rpg.ddns.net): " ANSIBLE_VAR_noip_hostname
+        prompt_user "Usuário (email) do No-IP: " ANSIBLE_VAR_noip_username
+        prompt_user "Senha do No-IP: " ANSIBLE_VAR_noip_password "" true
+    fi
+
+    # 5. Gerenciar Vault e Chave SSH
     log "Configurando o OCI Vault para armazenar sua chave SSH de forma segura..."
     local vault_name="foundry-vtt-iac-vault"
     local key_name="foundry-vtt-iac-key"
     local secret_name="foundry-vtt-iac-ssh-key"
-
-    # Verificar se o Vault já existe
     VAULT_OCID=$(oci vault vault list --compartment-id "$TF_VAR_compartment_ocid" --display-name "$vault_name" --query "data[0].id" --raw-output)
     if [ -z "$VAULT_OCID" ] || [ "$VAULT_OCID" == "null" ]; then
         echo "Criando um novo Vault ($vault_name)..."
@@ -115,10 +121,7 @@ init() {
     else
         echo "Usando Vault existente ($vault_name)."
     fi
-
     MANAGEMENT_ENDPOINT=$(oci vault vault get --vault-id "$VAULT_OCID" --query 'data."management-endpoint"' --raw-output)
-
-    # Verificar se a chave já existe
     KEY_OCID=$(oci vault key list --compartment-id "$TF_VAR_compartment_ocid" --endpoint "$MANAGEMENT_ENDPOINT" --display-name "$key_name" --query "data[0].id" --raw-output)
     if [ -z "$KEY_OCID" ] || [ "$KEY_OCID" == "null" ]; then
         echo "Criando uma nova chave de criptografia ($key_name)..."
@@ -127,27 +130,14 @@ init() {
     else
         echo "Usando chave de criptografia existente ($key_name)."
     fi
-
-    # Fazer upload da chave SSH como um Secret
     echo "Fazendo upload da sua chave SSH pública para o Vault..."
-    TF_VAR_ssh_public_key_secret_ocid=$(oci vault secret create-base64 \
-        --compartment-id "$TF_VAR_compartment_ocid" \
-        --vault-id "$VAULT_OCID" \
-        --key-id "$KEY_OCID" \
-        --secret-name "$secret_name" \
-        --secret-content-content-file "$SSH_PUBLIC_KEY_PATH" \
-        --query 'data.id' \
-        --raw-output)
-    
+    TF_VAR_ssh_public_key_secret_ocid=$(oci vault secret create-base64 --compartment-id "$TF_VAR_compartment_ocid" --vault-id "$VAULT_OCID" --key-id "$KEY_OCID" --secret-name "$secret_name" --secret-content-content-file "$SSH_PUBLIC_KEY_PATH" --query 'data.id' --raw-output)
     echo "Chave SSH armazenada com sucesso no Vault."
 
-    # 5. Gerar o arquivo config.sh
+    # 6. Gerar o arquivo config.sh
     log "Gerando arquivo de configuração '$CONFIG_FILE'..."
     cat > "$CONFIG_FILE" <<EOF
 # Arquivo de configuração gerado automaticamente por './manage.sh init'
-# Contém todas as variáveis necessárias para o Terraform e Ansible.
-
-# --- Variáveis da OCI ---
 export TF_VAR_tenancy_ocid="$TF_VAR_tenancy_ocid"
 export TF_VAR_user_ocid="$TF_VAR_user_ocid"
 export TF_VAR_fingerprint="$TF_VAR_fingerprint"
@@ -155,14 +145,13 @@ export TF_VAR_private_key_path="$TF_VAR_private_key_path"
 export TF_VAR_region="$TF_VAR_region"
 export TF_VAR_compartment_ocid="$TF_VAR_compartment_ocid"
 export TF_VAR_ssh_public_key_secret_ocid="$TF_VAR_ssh_public_key_secret_ocid"
-
-# --- Variáveis do Ansible ---
 export ANSIBLE_VAR_foundry_download_url="$ANSIBLE_VAR_foundry_download_url"
 export ANSIBLE_VAR_foundry_admin_user="admin"
 export ANSIBLE_VAR_foundry_admin_password="$ANSIBLE_VAR_foundry_admin_password"
 export ANSIBLE_VAR_foundry_domain_name="$ANSIBLE_VAR_foundry_domain_name"
-
-# --- Metadados para o comando 'clean' ---
+export ANSIBLE_VAR_noip_hostname="$ANSIBLE_VAR_noip_hostname"
+export ANSIBLE_VAR_noip_username="$ANSIBLE_VAR_noip_username"
+export ANSIBLE_VAR_noip_password="$ANSIBLE_VAR_noip_password"
 export METADATA_VAULT_OCID="$VAULT_OCID"
 export METADATA_SECRET_OCID="$TF_VAR_ssh_public_key_secret_ocid"
 EOF
@@ -177,8 +166,6 @@ up() {
     if ! load_config; then exit 1; fi
     
     log "Iniciando o processo de criação da infraestrutura (up)..."
-
-    # Terraform
     (
         cd terraform
         log "Inicializando o Terraform..."
@@ -186,7 +173,6 @@ up() {
         log "Aplicando o plano do Terraform para criar os recursos na OCI..."
         terraform apply -auto-approve
     )
-
     PUBLIC_IP=$(cd terraform && terraform output -raw foundry_instance_public_ip)
     if [ -z "$PUBLIC_IP" ]; then
         echo -e "${YELLOW}ERRO: Não foi possível obter o IP público da instância.${NC}"
@@ -194,23 +180,23 @@ up() {
     fi
     log "IP Público da instância: $PUBLIC_IP"
 
-    # Ansible
     (
         cd ansible
         log "Gerando inventário e variáveis para o Ansible..."
         echo "[foundry_server]" > inventory.ini
         echo "$PUBLIC_IP ansible_user=ubuntu" >> inventory.ini
-
         cat > "$ANSIBLE_VARS_FILE" <<EOF
 ---
 foundry_download_url: "$ANSIBLE_VAR_foundry_download_url"
 foundry_admin_user: "$ANSIBLE_VAR_foundry_admin_user"
 foundry_admin_password: "$ANSIBLE_VAR_foundry_admin_password"
 foundry_domain_name: "$ANSIBLE_VAR_foundry_domain_name"
+noip_hostname: "$ANSIBLE_VAR_noip_hostname"
+noip_username: "$ANSIBLE_VAR_noip_username"
+noip_password: "$ANSIBLE_VAR_noip_password"
 EOF
         log "Aguardando a instância ficar pronta para conexão SSH (60s)..."
         sleep 60
-
         log "Executando o playbook do Ansible para configurar o servidor..."
         ansible-playbook -i inventory.ini playbook.yml --private-key ~/.ssh/id_rsa
     )
@@ -219,6 +205,8 @@ EOF
     echo "Seu servidor Foundry VTT está pronto para ser acessado."
     if [ -n "$ANSIBLE_VAR_foundry_domain_name" ]; then
         echo "Acesse em: https://$ANSIBLE_VAR_foundry_domain_name"
+    elif [ -n "$ANSIBLE_VAR_noip_hostname" ]; then
+        echo "Acesse em: http://$ANSIBLE_VAR_noip_hostname:30000"
     else
         echo "Acesse em: http://$PUBLIC_IP:30000"
     fi
@@ -227,7 +215,6 @@ EOF
 # Comando 'down': Destrói a infraestrutura do Terraform
 down() {
     if ! load_config; then exit 1; fi
-
     log "Iniciando a destruição da infraestrutura do Terraform (down)..."
     (
         cd terraform
@@ -242,47 +229,26 @@ clean() {
         echo -e "${YELLOW}Nenhuma configuração para limpar.${NC}"
         exit 0
     fi
-
     log "Iniciando a limpeza completa (clean)..."
-    
-    # 1. Destruir infraestrutura do Terraform
     down
-
-    # 2. Deletar o Secret e o Vault
     log "Deletando o Secret da chave SSH do Vault..."
-    # A deleção precisa ser agendada
     oci vault secret schedule-deletion --secret-id "$METADATA_SECRET_OCID" --wait-for-state "DELETED"
-    
     log "Deletando o Vault..."
-    # A deleção do Vault também é agendada
     oci vault vault schedule-deletion --vault-id "$METADATA_VAULT_OCID" --wait-for-state "DELETED"
-
-    # 3. Remover arquivos locais
     log "Removendo arquivos de configuração locais..."
     rm -f "$CONFIG_FILE"
     rm -f "ansible/inventory.ini" "$ANSIBLE_VARS_FILE"
     rm -rf "terraform/.terraform" "terraform/terraform.tfstate*"
-
     echo -e "${GREEN}--- Limpeza Concluída! ---${NC}"
-    echo "Todos os recursos da OCI e arquivos locais foram removidos."
 }
-
 
 # --- Ponto de Entrada do Script ---
 case "$1" in
-    init)
-        init
-        ;;
-    up)
-        up
-        ;;
-    down)
-        down
-        ;;
-    clean)
-        clean
-        ;;
-    *)
+    init) init ;;
+    up) up ;;
+    down) down ;;
+    clean) clean ;;
+    *) 
         echo "Uso: $0 {init|up|down|clean}"
         echo "  ${GREEN}init${NC}  - Configura o projeto de forma interativa."
         echo "  ${GREEN}up${NC}    - Cria e provisiona o servidor Foundry VTT na OCI."

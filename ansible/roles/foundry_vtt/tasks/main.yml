@@ -43,6 +43,44 @@
 - name: Adicionar handlers para reiniciar o serviço
   meta: flush_handlers
 
+- name: Instalar e configurar o cliente No-IP DUC
+  block:
+    - name: Instalar dependências de compilação
+      apt:
+        name: build-essential
+        state: present
+
+    - name: Criar diretório temporário para o No-IP
+      file:
+        path: /tmp/noip
+        state: directory
+
+    - name: Baixar e descompactar o cliente No-IP
+      unarchive:
+        src: "http://www.noip.com/client/linux/noip-duc-linux.tar.gz"
+        dest: /tmp/noip
+        remote_src: yes
+        extra_opts: [--strip-components=1]
+
+    - name: Criar o arquivo de configuração do No-IP a partir do template
+      template:
+        src: noip.conf.j2
+        dest: /usr/local/etc/no-ip2.conf
+
+    - name: Compilar e instalar o cliente No-IP (não interativo)
+      command: make install
+      args:
+        chdir: /tmp/noip
+
+    - name: Habilitar e iniciar o serviço noip2
+      systemd:
+        name: noip2
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+  when: noip_hostname is defined and noip_hostname != ""
+
 - name: Instalar o Caddy
   block:
     - name: Instalar dependências para o repositório do Caddy

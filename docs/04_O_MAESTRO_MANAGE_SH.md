@@ -16,7 +16,7 @@ Vamos ver o que cada botão do nosso controle remoto faz.
 -   **Nos Bastidores:**
     1.  **Verifica as Ferramentas:** Ele primeiro olha se você tem a "CLI da OCI" (a ferramenta para conversar com a Oracle) e uma "Chave SSH" (a chave da sua casa). Se não tiver, ele avisa.
     2.  **Lê Suas Credenciais:** Ele abre o arquivo de configuração da CLI da OCI (`~/.oci/config`) e pega suas informações de acesso, como um crachá de funcionário.
-    3.  **Conversa com Você:** Ele te faz as duas únicas perguntas cujas respostas ele não consegue adivinhar: a URL de download do Foundry e a senha que você quer para o admin.
+    3.  **Conversa com Você:** Ele te faz as perguntas essenciais cujas respostas ele não consegue adivinhar: a URL de download do Foundry, a senha de admin, etc. Ele também pergunta se você quer configurar um endereço web fixo com o serviço No-IP, para não ter que se preocupar com a mudança de IPs.
     4.  **Cria o Cofre:** Ele usa a CLI da OCI para criar um "Vault" (cofre) e uma "Chave de Criptografia" na sua conta Oracle.
     5.  **Guarda a Chave:** Ele pega sua chave SSH pública do seu computador, sobe para a Oracle e a tranca dentro do cofre que acabou de criar.
     6.  **Gera o `config.sh`:** Ele cria um novo arquivo chamado `config.sh` e escreve nele todas as informações que coletou: suas credenciais, a localização do cofre, a URL do Foundry, etc. Este arquivo será a "cola" que une o Terraform e o Ansible.
