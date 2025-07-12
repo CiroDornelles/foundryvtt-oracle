@@ -1,0 +1,50 @@
+version: '3.8'
+
+volumes:
+  foundry_data:
+  caddy_data:
+
+services:
+  foundry:
+    image: felddy/foundryvtt:release
+    container_name: foundryvtt
+    hostname: foundryvtt
+    restart: unless-stopped
+    volumes:
+      - foundry_data:/data
+      # Monta o arquivo zip do Foundry VTT se ele for fornecido localmente.
+      # O contêiner felddy/foundryvtt irá usá-lo para a instalação inicial.
+      {% if foundry_vtt_download_url is not defined or foundry_vtt_download_url | length == 0 %}
+      - /tmp/foundryvtt.zip:/usr/local/bin/foundryvtt.zip:ro
+      {% endif %}
+    environment:
+      # Passa a senha do admin se definida no config/foundry_vars.yml
+      {% if admin_password is defined and admin_password | length > 0 %}
+      FOUNDRY_ADMIN_PASSWORD: "{{ admin_password }}"
+      {% endif %}
+      # Passa a URL de download se definida no .env
+      {% if foundry_vtt_download_url is defined and foundry_vtt_download_url | length > 0 %}
+      FOUNDRY_VTT_URL: "{{ foundry_vtt_download_url }}"
+      {% endif %}
+
+  caddy:
+    image: caddy:latest
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+    depends_on:
+      - foundry
+
+  noip:
+    image: noipcom/noip-duc
+    container_name: noip-duc
+    restart: unless-stopped
+    environment:
+      NOIP_USERNAME: "{{ username }}"
+      NOIP_PASSWORD: "{{ password }}"
+      NOIP_HOSTNAMES: "{{ hostname }}"

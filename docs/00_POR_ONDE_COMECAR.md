@@ -6,6 +6,11 @@ Se você está lendo isso, provavelmente faz parte da nossa comunidade de RPG e 
 
 Este conjunto de documentos foi criado pensando em você: uma pessoa que **não precisa ter nenhum conhecimento de programação ou de "coisas de computador"** para entender o que está acontecendo aqui.
 
+> **Primeiro Passo Absoluto:** Antes de mergulhar nos conceitos, certifique-se de ter preparado seu ambiente de configuração. O processo é simples:
+> 1.  Execute `./manage.sh init`. Isso criará uma pasta `config/` com os arquivos de configuração necessários.
+> 2.  Edite os arquivos dentro da pasta `config/` com suas informações (credenciais da Oracle Cloud, etc.).
+> 3.  Execute `./manage.sh preflight` para validar que tudo está correto antes de subir o servidor.
+
 ## O Problema que Estamos Resolvendo
 
 Para jogar Foundry VTT online com nossos amigos, precisamos de um "computador" que fique ligado na internet 24 horas por dia para hospedar nosso mundo de jogo. Esse computador é o que chamamos de **servidor**.
@@ -37,7 +42,7 @@ Pense nesta pasta `docs` como um pequeno livro. Sugerimos que você leia na orde
 
 3.  **`03_O_DECORADOR_ANSIBLE.md`**: Depois que a casa está construída, o Ansible entra para "mobiliar e decorar". Ele instala o Foundry VTT e o deixa prontinho para uso.
 
-4.  **`04_O_MAESTRO_MANAGE_SH.md`**: Este é o nosso "controle remoto". O arquivo `manage.sh` é o único com o qual interagimos, e este documento explica o que cada botão (`init`, `up`, `down`, `clean`) faz.
+4.  **`04_O_MAESTRO_MANAGE_SH.md`**: Este é o nosso "controle remoto". O arquivo `manage.sh` é o único com o qual interagimos, e este documento explica o que cada botão (`init`, `up`, `down`) faz.
 
 Nosso objetivo é que, ao final da leitura, você se sinta confortável para, no mínimo, entender como tudo se encaixa. E quem sabe, até se aventurar a executar os comandos!
 

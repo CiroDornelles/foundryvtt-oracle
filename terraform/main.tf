@@ -1,10 +1,6 @@
-# Busca o segredo da chave SSH pública no OCI Vault
-data "oci_vault_secret" "ssh_public_key" {
+# Busca o CONTEÚDO do segredo da chave SSH pública no OCI Vault
+data "oci_secrets_secretbundle" "ssh_public_key_bundle" {
   secret_id = var.ssh_public_key_secret_ocid
-}
-
-data "oci_vault_secret_content" "ssh_public_key_content" {
-  secret_id = data.oci_vault_secret.ssh_public_key.id
 }
 
 # Rede Virtual Cloud (VCN)
@@ -113,7 +109,6 @@ data "oci_core_images" "ubuntu_image" {
   compartment_id           = var.compartment_ocid
   operating_system         = "Canonical Ubuntu"
   operating_system_version = "22.04"
-  shape                    = "VM.Standard.A1.Flex"
   sort_by                  = "TIMECREATED"
   sort_order               = "DESC"
 }
@@ -123,12 +118,7 @@ resource "oci_core_instance" "foundry_instance" {
   availability_domain = data.oci_identity_availability_domain.ad.name
   compartment_id      = var.compartment_ocid
   display_name        = "foundry-vtt-server"
-  shape               = "VM.Standard.A1.Flex"
-
-  shape_config {
-    ocpus         = 1
-    memory_in_gbs = 6
-  }
+  shape               = "VM.Standard.E2.1.Micro"
 
   create_vnic_details {
     subnet_id        = oci_core_subnet.foundry_subnet.id
@@ -136,11 +126,12 @@ resource "oci_core_instance" "foundry_instance" {
   }
 
   source_details {
-    source_id   = data.oci_core_images.ubuntu_image.images[0].id
-    source_type = "image"
+    source_id               = data.oci_core_images.ubuntu_image.images[0].id
+    source_type             = "image"
+    boot_volume_size_in_gbs = "200"
   }
 
   metadata = {
-    ssh_authorized_keys = base64decode(data.oci_vault_secret_content.ssh_public_key_content.content)
+    ssh_authorized_keys = base64decode(data.oci_secrets_secretbundle.ssh_public_key_bundle.secret_bundle_content[0].content)
   }
 }

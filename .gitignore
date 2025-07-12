@@ -6,5 +6,23 @@ terraform/.terraform
 ansible/inventory.ini
 ansible/vars.yml
 
+# Arquivos de segredos
+.env
+*.env2
+
 # Arquivos de lock de editores
 .#*
+.aider*
+
+# Diretório de configuração local (não deve ser versionado)
+config/
+
+# Logs e arquivos temporários
+*.log
+erro.txt
+
+# Arquivos e diretórios locais
+jarbas/
+protocolos/
+tmp/
+ansible/roles/foundry_vtt/files/foundryvtt.zip

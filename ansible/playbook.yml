@@ -2,7 +2,13 @@
 - name: Configurar servidor Foundry VTT
   hosts: foundry_server
   become: yes
+
   vars_files:
-    - vars.yml
+    # Inclui os arquivos de variáveis de configuração.
+    # O 'ignore_errors' garante que o playbook não falhe se um arquivo
+    # de configuração opcional (como noip_vars.yml) não existir.
+    - "{{ playbook_dir }}/../config/foundry_vars.yml"
+    - "{{ playbook_dir }}/../config/noip_vars.yml"
+
   roles:
     - role: foundry_vtt

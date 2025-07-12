@@ -26,15 +26,14 @@ tipo_do_bloco "tipo_do_recurso" "nome_local" {
 
 ### A Planta Baixa (`main.tf`) Dissecada
 
-#### Bloco 1 e 2: Buscando a Chave SSH no Cofre (`data`)
+#### Bloco 1: Buscando o Conteúdo da Chave SSH no Cofre (`data`)
 
 ```hcl
-data "oci_vault_secret" "ssh_public_key" { ... }
-data "oci_vault_secret_content" "ssh_public_key_content" { ... }
+data "oci_secrets_secretbundle" "ssh_public_key_bundle" { ... }
 ```
 
--   **O que faz?** Estes blocos não criam nada. Eles são do tipo `data`, o que significa que eles **buscam informações que já existem**. Eles usam o OCID (a "identidade") do nosso segredo, que o script `init` guardou, para ir até o OCI Vault (nosso cofre) e pegar o conteúdo da nossa chave SSH pública.
--   **Por que precisamos disso?** Para que possamos instalar a "fechadura" (a chave pública) na porta do nosso servidor mais tarde, permitindo que o Ansible entre para fazer a configuração.
+-   **O que faz?** Este bloco não cria nada. Ele é do tipo `data`, o que significa que ele **busca informações que já existem**. Ele usa o OCID (a "identidade") do nosso segredo, que o script `init` guardou, para ir até o OCI Vault (nosso cofre) e pegar o **conteúdo** da nossa chave SSH pública.
+-   **Por que precisamos disso?** Para que possamos instalar a "fechadura" (a chave pública) na porta do nosso servidor mais tarde, permitindo que o Ansible entre para fazer a configuração. O Terraform precisa do *conteúdo* da chave para injetá-lo na instância.
 
 #### Bloco 3: A Rede Virtual (`oci_core_vcn`)
 
@@ -92,8 +91,8 @@ data "oci_identity_availability_domain" "ad" { ... }
 data "oci_core_images" "ubuntu_image" { ... }
 ```
 
--   **O que fazem?** De novo, blocos do tipo `data`. O primeiro descobre **onde** na Oracle (em qual "bairro") há espaço para construir. O segundo procura a **versão mais recente do "sistema operacional" Ubuntu 22.04**, que será o cérebro do nosso servidor.
--   **Analogia:** O arquiteto está consultando o catálogo da construtora para escolher o "modelo de kit pré-fabricado" (a imagem do Ubuntu) mais recente para nossa casa.
+-   **O que fazem?** De novo, blocos do tipo `data`. O primeiro descobre **onde** na Oracle (em qual "bairro") há espaço para construir. O segundo procura a **versão mais recente do "sistema operacional" Ubuntu 22.04**, que será o cérebro do nosso servidor, sem restringir a um tipo específico de processador (AMD ou ARM).
+-   **Analogia:** O arquiteto está consultando o catálogo da construtora para escolher o "modelo de kit pré-fabricado" (a imagem do Ubuntu) mais recente para nossa casa, sendo flexível quanto ao tipo de fundação (processador).
 
 #### Bloco 10: A Instância (`oci_core_instance`) - A Casa!
 
@@ -104,10 +103,21 @@ resource "oci_core_instance" "foundry_instance" { ... }
 -   **O que faz?** Finalmente, cria a **Máquina Virtual (VM)**, o nosso servidor.
 -   **Analogia:** Esta é a **construção da casa em si**. Usando todas as peças que definimos antes:
     -   `availability_domain`: O local exato no terreno.
-    -   `shape`: O "tamanho" da casa (quanta CPU e memória).
+    -   `shape`: O "tamanho" da casa. Agora usamos o shape `VM.Standard.E2.1.Micro`, que é uma opção "Always Free" mais consistentemente disponível.
     -   `create_vnic_details`: Conecta a casa à nossa sub-rede e dá a ela um endereço de rua (IP Público).
     -   `source_details`: Usa o "kit pré-fabricado" do Ubuntu que escolhemos.
     -   `metadata`: A parte mais importante! Aqui ele pega a **chave SSH pública** que buscamos lá no começo (no cofre) e a instala como a **fechadura na porta da frente da casa**.
+
+### Resiliência na Criação de Instâncias
+
+É comum que, na camada "Always Free" da OCI, ocorram erros de "Out of host capacity" (falta de capacidade de hardware) ao tentar criar uma instância. Para contornar isso, o script `manage.sh` foi configurado para **tentar novamente** (`terraform apply`) várias vezes em caso de falha. Isso aumenta significativamente a chance de sucesso no provisionamento da sua VM.
+
+### ⚠️ Consideração de Segurança: Acesso SSH
+
+Atualmente, a regra de segurança para acesso SSH (porta 22) está configurada para permitir conexões de `0.0.0.0/0` (qualquer lugar na internet). Embora isso seja conveniente para o primeiro uso, **não é uma prática recomendada para ambientes de produção**.
+
+-   **Risco:** Expor a porta SSH a toda a internet aumenta a superfície de ataque e a chance de tentativas de força bruta.
+-   **Melhoria Futura:** Para maior segurança, considere limitar o acesso SSH apenas ao seu endereço IP público ou a um bloco CIDR específico da sua rede. Isso pode ser feito modificando o bloco `oci_core_security_list` em `main.tf` e ajustando o `source` da regra de ingresso para a porta 22.
 
 E é isso! Ao final deste arquivo, o Terraform entregou para a Oracle uma planta completa. A Oracle a executa e, no final, temos um servidor novinho em folha, dentro de uma rede segura, pronto para o próximo passo: a decoração com o Ansible.
 

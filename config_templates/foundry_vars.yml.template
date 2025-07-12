@@ -1,0 +1,12 @@
+# =====================================================
+# Configuração do Servidor Foundry VTT
+# =====================================================
+# Deixe os valores em branco para ignorar a funcionalidade.
+
+# Senha do usuário 'admin' do Foundry.
+# Se deixado em branco, uma senha aleatória será gerada durante o 'up'.
+admin_password: ""
+
+# Domínio para acessar o Foundry VTT (ex: foundry.meudominio.com).
+# Se preenchido, o Caddy será configurado com este domínio e HTTPS.
+domain_name: ""

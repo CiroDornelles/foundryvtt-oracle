@@ -1,0 +1,9 @@
+# =====================================================
+# Configuração do No-IP (DNS Dinâmico)
+# =====================================================
+# Preencha os três valores para ativar a funcionalidade.
+# Deixe em branco para ignorar.
+
+hostname: ""
+username: ""
+password: ""

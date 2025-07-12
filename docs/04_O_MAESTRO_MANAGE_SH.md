@@ -4,7 +4,7 @@ Chegamos à peça final do quebra-cabeça: o arquivo `manage.sh`.
 
 Se o Terraform é o arquiteto e o Ansible é o decorador, o `manage.sh` é o **maestro da orquestra**, ou, numa analogia mais simples, o **controle remoto universal** da nossa "fábrica de servidores".
 
-É um arquivo de script. Pense nele como uma lista de atalhos. Em vez de você ter que digitar os comandos longos e complexos do Terraform e do Ansible, nós os programamos dentro deste arquivo em "botões" fáceis de usar.
+É um arquivo de script que criamos para juntar todos os comandos complicados do Terraform e do Ansible em "botões" fáceis de usar.
 
 Vamos ver o que cada botão do nosso controle remoto faz.
 
@@ -12,62 +12,52 @@ Vamos ver o que cada botão do nosso controle remoto faz.
 
 ### Botão 1: `./manage.sh init` (A Configuração Inicial)
 
--   **O que ele faz?** Este é o primeiro comando que você deve executar, e apenas uma vez. Ele prepara todo o projeto para você.
+-   **O que ele faz?** Este é o primeiro comando que você deve executar. Ele prepara o ambiente de configuração do projeto.
 -   **Nos Bastidores:**
-    1.  **Verifica as Ferramentas:** Ele primeiro olha se você tem a "CLI da OCI" (a ferramenta para conversar com a Oracle) e uma "Chave SSH" (a chave da sua casa). Se não tiver, ele avisa.
-    2.  **Lê Suas Credenciais:** Ele abre o arquivo de configuração da CLI da OCI (`~/.oci/config`) e pega suas informações de acesso, como um crachá de funcionário.
-    3.  **Conversa com Você:** Ele te faz as perguntas essenciais cujas respostas ele não consegue adivinhar: a URL de download do Foundry, a senha de admin, etc. Ele também pergunta se você quer configurar um endereço web fixo com o serviço No-IP, para não ter que se preocupar com a mudança de IPs.
-    4.  **Cria o Cofre:** Ele usa a CLI da OCI para criar um "Vault" (cofre) e uma "Chave de Criptografia" na sua conta Oracle.
-    5.  **Guarda a Chave:** Ele pega sua chave SSH pública do seu computador, sobe para a Oracle e a tranca dentro do cofre que acabou de criar.
-    6.  **Gera o `config.sh`:** Ele cria um novo arquivo chamado `config.sh` e escreve nele todas as informações que coletou: suas credenciais, a localização do cofre, a URL do Foundry, etc. Este arquivo será a "cola" que une o Terraform e o Ansible.
-
--   **Analogia:** O `init` é o **gerente de projetos**. Ele faz a primeira reunião, anota todos os requisitos, organiza as ferramentas, cria um local seguro para guardar as chaves e deixa tudo preparado para o início da obra.
+    1.  Cria uma pasta chamada `config/`.
+    2.  Copia os arquivos de modelo de `config_templates/` para dentro da pasta `config/`.
+    3.  Renomeia os arquivos, removendo a extensão `.template`.
+-   **Como usar:** Após rodar `init`, você deve editar os arquivos dentro da pasta `config/` com suas próprias informações (credenciais da OCI, configurações do Foundry, etc.).
+-   **Flag `--force`:** Se você já tiver uma pasta `config` e quiser começar do zero, pode usar `./manage.sh init --force` para sobrescrevê-la.
 
 ---
 
-### Botão 2: `./manage.sh up` (Construir o Servidor)
+### Botão 2: `./manage.sh preflight` (A Checagem de Pré-Voo)
+
+-   **O que ele faz?** Antes de tentar subir o servidor, este comando verifica se tudo está configurado corretamente.
+-   **Nos Bastidores:**
+    1.  **Valida Dependências Locais:** Confere se você tem as ferramentas `oci`, `terraform` e `ansible` instaladas.
+    2.  **Valida Arquivos de Configuração:** Garante que os arquivos em `config/` existem e que os valores padrão (como "SEU_OCID_AQUI") foram substituídos.
+    3.  **Sincroniza Recursos de Segurança (Vault):** Verifica se um OCI Vault, uma Chave de Criptografia e um Segredo para sua chave SSH existem na sua conta Oracle. Se não existirem, **ele os cria automaticamente**. Ele também atualiza o arquivo `config/terraform.tfvars` com o ID do segredo criado.
+
+---
+
+### Botão 3: `./manage.sh up` (Construir o Servidor)
 
 -   **O que ele faz?** Este comando constrói e configura o servidor do início ao fim.
 -   **Nos Bastidores:**
-    1.  **Chama o Arquiteto:** Ele executa o comando `terraform apply`. O Terraform lê a "planta da casa" (`main.tf`) e constrói toda a infraestrutura na Oracle Cloud.
-    2.  **Pega o Endereço:** Após a construção, o Terraform informa o endereço IP do novo servidor. O `manage.sh` anota esse endereço.
-    3.  **Chama o Decorador:** Ele executa o comando `ansible-playbook`. Ele entrega ao Ansible o endereço do servidor e o "livro de instruções" (`playbook.yml`). O Ansible usa a chave SSH para entrar no servidor e instalar tudo.
-    4.  **Anuncia o Resultado:** No final, ele te mostra o endereço final para você acessar o Foundry.
-
--   **Analogia:** Apertar `up` é dar a ordem para **iniciar a produção**. O gerente (manage.sh) primeiro chama o arquiteto (Terraform) para construir a casa e depois chama o decorador (Ansible) para mobiliá-la.
+    1.  **Executa a Checagem de Pré-Voo (`preflight`)** para garantir que tudo está pronto.
+    2.  **Chama o Arquiteto (Terraform):** Executa `terraform apply`, que lê a "planta da casa" (`terraform/main.tf`) e constrói toda a infraestrutura na Oracle Cloud.
+    3.  **Pega o Endereço:** Após a construção, o Terraform informa o endereço IP do novo servidor.
+    4.  **Chama o Decorador (Ansible):** Executa `ansible-playbook`. O Ansible usa a chave SSH para entrar no servidor, gera os arquivos de configuração a partir dos templates (`.j2`) e sobe os containers do Foundry VTT e Caddy com o Docker Compose.
+    5.  **Anuncia o Resultado:** No final, ele te mostra o endereço final para você acessar o Foundry e as credenciais do admin.
 
 ---
 
-### Botão 3: `./manage.sh down` (Demolir o Servidor)
+### Botão 4: `./manage.sh down` (Destruir o Servidor)
 
--   **O que ele faz?** Destrói a infraestrutura do servidor (a VM, a rede, o IP), mas **mantém as configurações e o cofre intactos**.
+-   **O que ele faz?** Apaga **TUDO** que foi criado por este projeto na sua conta OCI (servidor, rede, etc.) e limpa os arquivos de configuração locais.
 -   **Nos Bastidores:**
-    1.  **Chama o Arquiteto para Demolir:** Ele executa o comando `terraform destroy`. O Terraform lê seu estado atual e destrói, um por um, todos os recursos que ele criou na nuvem.
-
--   **Analogia:** É o botão de **"fim de festa"**. A casa é demolida para não ocupar espaço no terreno (e não gerar custos), mas a planta da casa (`main.tf`) e o cofre com a chave (`OCI Vault`) são mantidos, caso você queira dar outra festa e construir tudo de novo amanhã.
-
----
-
-### Bot��o 4: `./manage.sh clean` (Limpeza Total)
-
--   **O que ele faz?** Apaga **TUDO**. O servidor, o cofre, a chave guardada, os arquivos de configuração... tudo. Deixa sua conta da Oracle e sua pasta local como se o projeto nunca tivesse existido.
--   **Nos Bastidores:**
-    1.  **Executa o `down`:** Primeiro, ele demole a infraestrutura do servidor, como no comando anterior.
-    2.  **Esvazia e Demole o Cofre:** Ele envia comandos para a Oracle para agendar a exclusão da chave SSH de dentro do cofre e, em seguida, agendar a exclusão do próprio cofre.
-    3.  **Limpa os Arquivos Locais:** Ele apaga o `config.sh` e outros arquivos temporários que foram criados.
-
--   **Analogia:** É o botão de **"vender o terreno e queimar a planta da casa"**. É uma limpeza definitiva, para quando você tem certeza de que não usará mais este projeto.
+    1.  **Pede Confirmação:** Por ser uma ação destrutiva, ele exige que você digite "destruir" para continuar.
+    2.  **Chama o Arquiteto para Demolir:** Executa `terraform destroy`, que remove todos os recursos criados na nuvem.
+    3.  **Limpa os Arquivos Locais:** Apaga a pasta `config/` e outros arquivos de estado e logs gerados.
 
 ---
 
-### Botão Bônus: `./manage.sh check-permissions` (O Consultor de Segurança)
+### Comandos Auxiliares
 
--   **O que ele faz?** Este comando não constrói nem destrói nada. Ele é uma ferramenta de ajuda. Se o comando `init` falhar por falta de permissão, este comando te ajuda a resolver.
--   **Nos Bastidores:**
-    1.  **Investiga sua Conta:** Ele usa a CLI da OCI para descobrir qual é o seu usuário e a qual grupo ele pertence.
-    2.  **Gera a Receita:** Ele imprime na tela o texto exato das permissões que você precisa dar a esse grupo para que o projeto funcione. Ele também te dá o comando completo para fazer isso via terminal, se preferir.
--   **Analogia:** É como chamar um **consultor de segurança**. Você não sabe por que o porteiro não te deixa entrar na obra, então o consultor verifica seus documentos, vê o que está faltando e te entrega um formulário preenchido, pronto para você assinar e entregar na administração do condomínio.
-
----
+-   `./manage.sh ssh-server`: Conecta você diretamente ao servidor via SSH, se ele estiver ativo.
+-   `./manage.sh status`: Mostra o estado atual dos recursos gerenciados pelo Terraform.
+-   `./manage.sh help`: Exibe a lista de todos os comandos disponíveis.
 
 E assim, o `manage.sh` orquestra todo o trabalho complexo, permitindo que qualquer pessoa gerencie um servidor poderoso com comandos simples e diretos.

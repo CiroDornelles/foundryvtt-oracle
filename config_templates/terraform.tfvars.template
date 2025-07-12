@@ -1,0 +1,14 @@
+# =====================================================
+# Configuração do Provedor Terraform para OCI
+# =====================================================
+# Preencha estas variáveis com os dados da sua conta OCI.
+
+tenancy_ocid     = "SEU_TENANCY_OCID"
+user_ocid        = "SEU_USER_OCID"
+fingerprint      = "SEU_FINGERPRINT_DA_CHAVE_API"
+private_key_path = "CAMINHO_PARA_SUA_CHAVE_PRIVADA_OCI" # Ex: /home/ciro/.oci/oci_api_key.pem
+region           = "SUA_REGIAO_OCI"                     # Ex: sa-saopaulo-1
+compartment_ocid = "SEU_COMPARTMENT_OCID"
+
+# A variável abaixo será preenchida automaticamente pelo comando 'init --interactive' ou 'preflight'.
+# ssh_public_key_secret_ocid = "..."

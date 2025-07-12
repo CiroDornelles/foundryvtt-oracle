@@ -1,125 +1,108 @@
 ---
-- name: Atualizar o cache de pacotes APT
-  apt:
-    update_cache: yes
-    cache_valid_time: 3600
-
-- name: Instalar dependências necessárias
+- name: "ETAPA 1: Instalar dependências essenciais do sistema"
   apt:
     name:
-      - nodejs
-      - npm
+      - ufw
+      - zip
       - unzip
+      - apt-transport-https
+      - debian-keyring
+      - debian-archive-keyring
     state: present
+    update_cache: yes
+  become: yes
 
-- name: Criar o diretório de instalação do Foundry VTT
-  file:
-    path: /opt/foundryvtt
-    state: directory
-    owner: root
-    group: root
-    mode: '0755'
-
-- name: Baixar e descompactar o Foundry VTT
-  unarchive:
-    src: "{{ foundry_download_url }}"
-    dest: /opt/foundryvtt
-    remote_src: yes
-    extra_opts: [--strip-components=1]
-
-- name: Criar o serviço systemd para o Foundry VTT
-  template:
-    src: foundryvtt.service.j2
-    dest: /etc/systemd/system/foundryvtt.service
-  notify: Reiniciar o Foundry VTT
-
-- name: Habilitar e iniciar o serviço Foundry VTT
-  systemd:
-    name: foundryvtt
-    enabled: yes
-    state: started
-    daemon_reload: yes
-
-- name: Adicionar handlers para reiniciar o serviço
-  meta: flush_handlers
-
-- name: Instalar e configurar o cliente No-IP DUC
+- name: "ETAPA 2: Configurar o Firewall (UFW)"
   block:
-    - name: Instalar dependências de compilação
-      apt:
-        name: build-essential
+    - name: "Permitir portas essenciais para Docker e SSH"
+      community.general.ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - "22"  # SSH
+        - "80"  # HTTP (para Caddy)
+        - "443" # HTTPS (para Caddy)
+    
+    - name: "Habilitar o UFW"
+      community.general.ufw:
+        state: enabled
+  become: yes
+
+- name: "ETAPA 3: Instalar Docker e dependências"
+  block:
+    - name: "Adicionar a chave GPG oficial do Docker"
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
         state: present
 
-    - name: Criar diretório temporário para o No-IP
-      file:
-        path: /tmp/noip
-        state: directory
+    - name: "Adicionar o repositório do Docker"
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
 
-    - name: Baixar e descompactar o cliente No-IP
-      unarchive:
-        src: "http://www.noip.com/client/linux/noip-duc-linux.tar.gz"
-        dest: /tmp/noip
-        remote_src: yes
-        extra_opts: [--strip-components=1]
-
-    - name: Criar o arquivo de configuração do No-IP a partir do template
-      template:
-        src: noip.conf.j2
-        dest: /usr/local/etc/no-ip2.conf
-
-    - name: Compilar e instalar o cliente No-IP (não interativo)
-      command: make install
-      args:
-        chdir: /tmp/noip
-
-    - name: Habilitar e iniciar o serviço noip2
-      systemd:
-        name: noip2
-        enabled: yes
-        state: started
-        daemon_reload: yes
-
-  when: noip_hostname is defined and noip_hostname != ""
-
-- name: Instalar o Caddy
-  block:
-    - name: Instalar dependências para o repositório do Caddy
+    - name: "Instalar Docker e Docker Compose"
       apt:
         name:
-          - debian-keyring
-          - debian-archive-keyring
-          - apt-transport-https
-        state: present
-
-    - name: Adicionar a chave GPG do repositório do Caddy
-      get_url:
-        url: "https://dl.cloudsmith.io/public/caddy/stable/gpg.key"
-        dest: /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-        mode: '0644'
-
-    - name: Adicionar o repositório do Caddy
-      apt_repository:
-        repo: "deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main"
-        state: present
-        filename: caddy-stable
-
-    - name: Instalar o Caddy
-      apt:
-        name: caddy
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-compose-plugin
         state: present
         update_cache: yes
-  when: foundry_domain_name is defined and foundry_domain_name != ""
 
-- name: Configurar o Caddyfile
-  template:
-    src: Caddyfile.j2
-    dest: /etc/caddy/Caddyfile
-  notify: Recarregar o Caddy
-  when: foundry_domain_name is defined and foundry_domain_name != ""
+    - name: "Garantir que o serviço Docker esteja ativo"
+      systemd:
+        name: docker
+        enabled: yes
+        state: started
 
-- name: Garantir que o Caddy esteja iniciado
-  systemd:
-    name: caddy
-    enabled: yes
-    state: started
-  when: foundry_domain_name is defined and foundry_domain_name != ""
+    - name: "Adicionar usuário 'ubuntu' ao grupo 'docker'"
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+- name: "ETAPA 4: Preparar e Implantar a Stack Docker"
+  block:
+    - name: "Criar diretórios para a configuração do Docker"
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+      loop:
+        - /home/ubuntu/foundry-docker
+        - /home/ubuntu/foundry-docker/caddy
+
+    - name: "Copiar o arquivo foundryvtt.zip para o servidor (se necessário)"
+      copy:
+        src: foundryvtt.zip
+        dest: /tmp/foundryvtt.zip
+        owner: ubuntu
+        group: ubuntu
+        mode: '0644'
+      when: foundry_vtt_download_url is not defined or foundry_vtt_download_url | length == 0
+
+    - name: "Gerar o arquivo Caddyfile a partir do template"
+      template:
+        src: Caddyfile.j2
+        dest: /home/ubuntu/foundry-docker/caddy/Caddyfile
+        owner: ubuntu
+        group: ubuntu
+        mode: '0644'
+      when: domain_name is defined and domain_name|length > 0
+
+    - name: "Gerar o arquivo docker-compose.yml a partir do template"
+      template:
+        src: docker-compose.yml.j2
+        dest: /home/ubuntu/foundry-docker/docker-compose.yml
+        owner: ubuntu
+        group: ubuntu
+        mode: '0644'
+
+    - name: "Iniciar a stack de serviços com Docker Compose"
+      community.docker.docker_compose:
+        project_src: /home/ubuntu/foundry-docker
+        state: present

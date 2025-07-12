@@ -1,0 +1,10 @@
+{
+  "name": "FoundryIACVaultManagementPolicy",
+  "description": "Policy to allow the Foundry IAC user to manage Vaults, Keys, and Secrets.",
+  "statements": [
+    "Allow user id ocid1.user.oc1..aaaaaaaa2j4yrahpkzkx2ug7fhiwqigebcf4w6pckdpijtsizvzlayuqslra to manage vaults in tenancy",
+    "Allow user id ocid1.user.oc1..aaaaaaaa2j4yrahpkzkx2ug7fhiwqigebcf4w6pckdpijtsizvzlayuqslra to manage keys in tenancy",
+    "Allow user id ocid1.user.oc1..aaaaaaaa2j4yrahpkzkx2ug7fhiwqigebcf4w6pckdpijtsizvzlayuqslra to manage secrets in tenancy"
+  ],
+  "compartmentId": "ocid1.tenancy.oc1..aaaaaaaahyubcwh6zwjcohohgncw7gigrb7hrbiqgtinullqykaywmeanbya"
+}

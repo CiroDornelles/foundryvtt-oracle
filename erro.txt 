@@ -1,0 +1,50 @@
+ciro@ciro-a72hyb:~/Documentos/Projetos/foundry-vtt-iac$ bash manage.sh check-permissions
+
+>> Verificando pré-requisitos...
+✔ Todos os pré-requisitos foram atendidos.
+
+>> Verificando permissões e gerando políticas...
+
+>> Buscando o grupo do seu usuário (OCID: ocid1.user.oc1..aaaaaaaa2j4yrahpkzkx2ug7fhiwqigebcf4w6pckdpijtsizvzlayuqslra)...
+✔ Usuário encontrado no grupo: 
+
+>> Políticas de permissão recomendadas para o grupo '':
+[
+        "Allow group '' to manage vaults in tenancy",
+        "Allow group '' to manage keys in tenancy",
+        "Allow group '' to manage secrets in tenancy",
+        "Allow group '' to manage virtual-network-family in tenancy",
+        "Allow group '' to manage instance-family in tenancy"
+    ]
+
+>> Para criar uma política com essas permissões, você pode:
+1. \033[0;34mVia Console Web:\033[0m Vá para 'Identity & Security' -> 'Policies', clique em 'Create Policy' e cole as linhas amarelas.
+2. \033[0;34mVia CLI:\033[0m Copie e cole o comando abaixo:
+oci iam policy create --compartment-id "ocid1.tenancy.oc1..aaaaaaaahyubcwh6zwjcohohgncw7gigrb7hrbiqgtinullqykaywmeanbya" --name "FoundryIAC-Permissions" --description "Permissões para o projeto Foundry VTT IaC" --statements "[
+        \"Allow group '' to manage vaults in tenancy\",
+        \"Allow group '' to manage keys in tenancy\",
+        \"Allow group '' to manage secrets in tenancy\",
+        \"Allow group '' to manage virtual-network-family in tenancy\",
+        \"Allow group '' to manage instance-family in tenancy\"
+    ]"
+ciro@ciro-a72hyb:~/Documentos/Projetos/foundry-vtt-iac$ oci iam policy create --compartment-id "ocid1.tenancy.oc1..aaaaaaaahyubcwh6zwjcohohgncw7gigrb7hrbiqgtinullqykaywmeanbya" --name "FoundryIAC-Permissions" --description "Permissões para o projeto Foundry VTT IaC" --statements "[
+        \"Allow group '' to manage vaults in tenancy\",
+        \"Allow group '' to manage keys in tenancy\",
+        \"Allow group '' to manage secrets in tenancy\",
+        \"Allow group '' to manage virtual-network-family in tenancy\",
+        \"Allow group '' to manage instance-family in tenancy\"
+    ]"
+ServiceError:
+{
+    "client_version": "Oracle-PythonSDK/2.155.1, Oracle-PythonCLI/3.62.1",
+    "code": "NotAuthenticated",
+    "logging_tips": "Please run the OCI CLI command using --debug flag to find more debug information.",
+    "message": "The required information to complete authentication was not provided or was incorrect.",
+    "opc-request-id": "757C2BADC159428094EC9AF79EC742CC/C0D59EA939A66BE44A92A6D9C2FCB2CA/3FF94DF1FC0CD8E39C6B9E4982A12954",
+    "operation_name": "create_policy",
+    "request_endpoint": "POST https://identity.sa-saopaulo-1.oci.oraclecloud.com/20160918/policies",
+    "status": 401,
+    "target_service": "identity",
+    "timestamp": "2025-07-09T15:05:03.973685+00:00",
+    "troubleshooting_tips": "See [https://docs.oracle.com/iaas/Content/API/References/apierrors.htm] for more information about resolving this error. If you are unable to resolve this issue, run this CLI command with --debug option and contact Oracle support and provide them the full error message."
+}
